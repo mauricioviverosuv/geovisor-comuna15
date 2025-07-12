@@ -190,6 +190,51 @@ var map = L.map('map').setView([3.405008, -76.501747], 15);
           layerLoaded();
         });
     }
+
+    // Helper to get unique sorted values for a property
+    function getUniqueValues(features, prop) {
+      const values = new Set();
+      features.forEach(f => {
+        const val = f.properties[prop];
+        if (val !== null && val !== undefined && val !== '') {
+          values.add(val.toString());
+        }
+      });
+      return Array.from(values).sort();
+    }
+
+    // Populate a select element with options
+    function populateSelect(selectId, values) {
+      const select = document.getElementById(selectId);
+      // Clear existing options except the first
+      while (select.options.length > 1) {
+        select.remove(1);
+      }
+      values.forEach(val => {
+        const option = document.createElement('option');
+        option.value = val;
+        option.text = val;
+        select.appendChild(option);
+      });
+    }
+
+    function filterAndDisplay(dataArray, filters, layerGroup, createLayerFeature) {
+      layerGroup.clearLayers();
+
+      var filtered = dataArray.filter(feature => {
+        return Object.keys(filters).every(key => {
+          var val = feature.properties[key];
+          if (val === null || val === undefined || val === '') return false;
+          if (!filters[key]) return true; // no filter for this key
+          return val.toString().toLowerCase() === filters[key].toLowerCase();
+        });
+      });
+
+      filtered.forEach(feature => {
+        var layer = createLayerFeature(feature);
+        layerGroup.addLayer(layer);
+      });
+    }
 // Barrios
     loadGeoJSON('https://100.28.12.43/ows?service=WFS&version=1.0.0&request=GetFeature&outputFormat=application/json&typeName=sig3_taller3:barrios_comuna15', data => {
       barriosData = data.features;
