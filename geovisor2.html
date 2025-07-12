@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Geovisor Comuna 15 - Taller 3</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
+    #map-title {
+      text-align: center;
+      font-size: 24px;
+      margin: 10px 0;
+      color: #333;
+      height: 40px;
+      line-height: 40px;
+    }
+    #container {
+      display: flex;
+      height: calc(100vh - 50px);
+    }
+    #map {
+      flex: 1;
+      position: relative;
+    }
+    #sidebar {
+      width: 350px;
+      overflow-y: auto;
+      border-left: 1px solid #ccc;
+      padding: 10px;
+      box-sizing: border-box;
+      background: #f9f9f9;
+    }
+    h2 {
+      margin-top: 20px;
+      font-size: 18px;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 5px;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    select {
+      width: 100%;
+      padding: 5px;
+      box-sizing: border-box;
+      margin-top: 3px;
+    }
+    .loading {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 1000;
+    }
+    .leaflet-control-home {
+      background-color: white;
+      padding: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      border-radius: 4px;
+      box-shadow: 0 0 3px rgba(0,0,0,0.4);
+    }
+    .leaflet-control-north {
+      background: white url('north-arrow-compass-compass-north-icon-png-free-vector.jpg') no-repeat center center;
+      background-size: 30px 30px;
+      width: 34px;
+      height: 34px;
+      border-radius: 4px;
+      box-shadow: 0 0 3px rgba(0,0,0,0.4);
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="map-title">Geovisor Bienestar Comuna 15</h1>
+  <div id="container">
+    <div id="map"></div>
+    <div id="sidebar">
+      <!-- Barrios -->
+      <section id="barrios-section">
+        <h2>Barrios</h2>
+        <label for="filter-pobre_nbi">Necesidades Básicas Insatisfechas:</label>
+        <select id="filter-pobre_nbi"><option value="">-- Todos --</option></select>
+        <label for="filter-ipm_1">Pobreza multidimensional:</label>
+        <select id="filter-ipm_1"><option value="">-- Todos --</option></select>
+        <label for="filter-barrio_pr">Barrio Precario:</label>
+        <select id="filter-barrio_pr"><option value="">-- Todos --</option></select>
+      </section>
+
+      <!-- Vías -->
+      <section id="vias-section">
+        <h2>Vías</h2>
+        <label for="filter-estado">Estado:</label>
+        <select id="filter-estado"><option value="">-- Todos --</option></select>
+      </section>
+
+      <!-- IPS -->
+      <section id="ips-section">
+        <h2>IPS</h2>
+        <label for="filter-natu_ips">Naturalidad:</label>
+        <select id="filter-natu_ips"><option value="">-- Todos --</option></select>
+        <label for="filter-cla_ips">Clase:</label>
+        <select id="filter-cla_ips"><option value="">-- Todos --</option></select>
+        <label for="filter-servicio">Tipo de Servicio:</label>
+        <select id="filter-servicio"><option value="">-- Todos --</option></select>
+        <label for="filter-descrip_se">Descripción:</label>
+        <select id="filter-descrip_se"><option value="">-- Todos --</option></select>
+      </section>
+    </div>
+  </div>
+  <div id="loading" class="loading">Cargando capas...</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+var map = L.map('map').setView([3.405008, -76.501747], 15);
+
+    var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors'
+    });
+
+    osm.addTo(map);
+
+    var barriosLayer = L.layerGroup().addTo(map);
+    var viasLayer = L.layerGroup().addTo(map);
+    var ipsLayer = L.layerGroup().addTo(map);
+
+    var barriosData = [];
+    var viasData = [];
+    var ipsData = [];
+
+    var layersToLoad = 3;
+    var layersLoaded = 0;
+    var loadingDiv = document.getElementById('loading');
+    var errorOccurred = false;
+
+    function layerLoaded() {
+      layersLoaded++;
+      if (layersLoaded === layersToLoad) {
+        if (errorOccurred) {
+          loadingDiv.textContent = 'Error cargando algunas capas.';
+          setTimeout(() => {
+            loadingDiv.style.display = 'none';
+          }, 3000);
+        } else {
+          loadingDiv.style.display = 'none';
+        }
+      }
+    }
+
+    function createPopup(feature, layer) {
+      if (feature.properties) {
+        var popupContent = '<div style="max-width: 250px;">';
+        for (var key in feature.properties) {
+          if (
+            feature.properties[key] !== null &&
+            feature.properties[key] !== '' &&
+            !['id', 'id_comuna', 'id_barrio'].includes(key.toLowerCase())
+          ) {
+            popupContent += '<b>' + key + ':</b> ' + feature.properties[key] + '<br>';
+          }
+        }
+        popupContent += '</div>';
+        layer.bindPopup(popupContent);
+      }
+    }
+
+    function loadGeoJSON(url, onLoad) {
+      return fetch(url)
+        .then(response => {
+          if (!response.ok) throw new Error('Error HTTP: ' + response.status);
+          return response.json();
+        })
+        .then(data => {
+          onLoad(data);
+          layerLoaded();
+        })
+        .catch(error => {
+          console.error('Error cargando capa:', error);
+          errorOccurred = true;
+          layerLoaded();
+        });
+    }
+// Barrios
+    loadGeoJSON('https://100.28.12.43/ows?service=WFS&version=1.0.0&request=GetFeature&outputFormat=application/json&typeName=sig3_taller3:barrios_comuna15', data => {
+      barriosData = data.features;
+
+      // Populate selects with unique values
+      populateSelect('filter-pobre_nbi', getUniqueValues(barriosData, 'pobre_nbi'));
+      populateSelect('filter-ipm_1', getUniqueValues(barriosData, 'ipm_1'));
+      populateSelect('filter-barrio_pr', getUniqueValues(barriosData, 'barrio_pr'));
+
+      var filters = {
+        pobre_nbi: '',
+        ipm_1: '',
+        barrio_pr: ''
+      };
+
+      function update() {
+        filterAndDisplay(barriosData, filters, barriosLayer, feature => {
+          return L.geoJSON(feature, {
+            style: {
+              color: '#3388ff',
+              weight: 2,
+              opacity: 0.8,
+              fillOpacity: 0.2,
+              fillColor: '#3388ff'
+            },
+            onEachFeature: createPopup
+          });
+        });
+      }
+
+      update();
+
+      ['pobre_nbi', 'ipm_1', 'barrio_pr'].forEach(key => {
+        document.getElementById('filter-' + key).addEventListener('change', e => {
+          filters[key] = e.target.value;
+          update();
+        });
+      });
+    });
+
+    // Vías
+    loadGeoJSON('https://100.28.12.43/ows?service=WFS&version=1.0.0&request=GetFeature&outputFormat=application/json&typeName=sig3_taller3:vias_comuna15', data => {
+      viasData = data.features;
+
+      populateSelect('filter-estado', getUniqueValues(viasData, 'estado'));
+
+      var filters = {
+        estado: ''
+      };
+
+      function update() {
+        filterAndDisplay(viasData, filters, viasLayer, feature => {
+          return L.geoJSON(feature, {
+            style: {
+              color: '#ff8c00',
+              weight: 3,
+              opacity: 0.8
+            },
+            onEachFeature: createPopup
+          });
+        });
+      }
+
+      update();
+
+      document.getElementById('filter-estado').addEventListener('change', e => {
+        filters.estado = e.target.value;
+        update();
+      });
+    });
+
+    // IPS
+    loadGeoJSON('https://100.28.12.43/ows?service=WFS&version=1.0.0&request=GetFeature&outputFormat=application/json&typeName=sig3_taller3:ips_comuna15', data => {
+      ipsData = data.features;
+
+      ['natu_ips', 'cla_ips', 'servicio', 'descrip_se'].forEach(key => {
+        populateSelect('filter-' + key, getUniqueValues(ipsData, key));
+      });
+
+      var filters = {
+        natu_ips: '',
+        cla_ips: '',
+        servicio: '',
+        descrip_se: ''
+      };
+
+      function update() {
+        filterAndDisplay(ipsData, filters, ipsLayer, feature => {
+          return L.geoJSON(feature, {
+            pointToLayer: function (feature, latlng) {
+              return L.circleMarker(latlng, {
+                radius: 8,
+                fillColor: '#00ff00',
+                color: '#008000',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8
+              });
+            },
+            onEachFeature: createPopup
+          });
+        });
+      }
+
+      update();
+
+      ['natu_ips', 'cla_ips', 'servicio', 'descrip_se'].forEach(key => {
+        document.getElementById('filter-' + key).addEventListener('change', e => {
+          filters[key] = e.target.value;
+          update();
+        });
+      });
+    });
+
+    // Control Home (botón para volver a vista inicial)
+    L.Control.Home = L.Control.extend({
+      onAdd: function(map) {
+        var btn = L.DomUtil.create('div', 'leaflet-control-home');
+        btn.innerHTML = 'Home';
+        btn.title = 'Volver a vista inicial';
+        btn.onclick = function() {
+          if (barriosLayer.getBounds) {
+            map.fitBounds(barriosLayer.getBounds(), { padding: [20, 20] });
+          } else {
+            map.setView([3.405008, -76.501747], 15);
+          }
+        };
+        return btn;
+      },
+      onRemove: function(map) {}
+    });
+    L.control.home = function(opts) {
+      return new L.Control.Home(opts);
+    }
+    L.control.home({ position: 'topleft' }).addTo(map);
+
+    // Control Flecha Norte
+    L.Control.North = L.Control.extend({
+      onAdd: function(map) {
+        var div = L.DomUtil.create('div', 'leaflet-control-north');
+        div.title = 'Norte';
+        return div;
+      },
+      onRemove: function(map) {}
+    });
+    L.control.north = function(opts) {
+      return new L.Control.North(opts);
+    }
+    L.control.north({ position: 'topleft' }).addTo(map);
+
+    // Control de capas en esquina inferior derecha
+    var baseLayers = {
+      "OpenStreetMap": osm,
+      "Satelital": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: '© Esri'
+      })
+    };
+
+    var overlays = {
+      "Comuna 15": barriosLayer,
+      "Barrios": barriosLayer,
+      "IPS": ipsLayer,
+      "Vías": viasLayer
+    };
+
+    L.control.layers(baseLayers, overlays, {
+      position: 'bottomright',
+      collapsed: false
+    }).addTo(map);
+  </script>
+</body>
+</html>
